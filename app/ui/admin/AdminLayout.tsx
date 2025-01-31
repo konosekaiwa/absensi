@@ -16,7 +16,7 @@ const AdminLayout = ({ children }: { children: React.ReactNode }) => {
       </div>
 
       {/* Main content area */}
-      <main className="row-start-2 col-start-2 p-6">
+      <main className="row-start-2 col-start-2 p-2">
         {children}
       </main>
     </div>

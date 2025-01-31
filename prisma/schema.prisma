@@ -1,48 +1,68 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql" // Ganti sesuai database yang Anda gunakan
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-
 model User {
-  id          Int        @id @default(autoincrement())
-  username    String     @unique // Mengubah dari name menjadi username
+  id          Int          @id @default(autoincrement())
+  username    String       @unique
   password    String
   role        UserRole
   attendance  Attendance[]
-  dateOfBirth DateTime 
-  sekolah      String?  // Kolom baru
-  jurusan      String?  // Kolom baru
-  tanggalMasuk DateTime? // Kolom baru
-  tanggalKeluar DateTime? // Kolom baru
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  activities  Activity[]   // Relasi ke tabel Activity
+  tasks       Task[]       @relation("UserTasks")
+  dateOfBirth DateTime
+  sekolah     String?
+  jurusan     String?
+  tanggalMasuk DateTime?
+  tanggalKeluar DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Task {
+  id          Int          @id @default(autoincrement())
+  title       String
+  description String
+  deadline    DateTime
+  status      String        @default("Pending")
+  assignedTo  User?         @relation("UserTasks", fields: [userId], references: [id])
+  userId      Int?
+  activities  Activity[]    // Relasi ke tabel Activity
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Activity {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId      Int?      // Opsional, karena laporan tidak selalu terkait tugas tertentu
+  task        Task?     @relation(fields: [taskId], references: [id])
+  date        DateTime
+  description String    // Isi laporan siswa magang
+  status      String    // Status laporan (contoh: hadir, izin, alpha)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("activities")
 }
 
 model Attendance {
   id        Int      @id @default(autoincrement())
   userId    Int
-  user      User     @relation(fields: [userId], references: [id])
-  date      DateTime // Menghapus @unique dari kolom date
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime
   status    String   // Status kehadiran (PRESENT, ABSENT, dll.)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([userId, date]) // Menambahkan constraint unik untuk kombinasi userId dan date
+  @@unique([userId, date]) // Constraint unik untuk kombinasi userId dan date
 }
-
-
-
 
 enum UserRole {
   ADMIN

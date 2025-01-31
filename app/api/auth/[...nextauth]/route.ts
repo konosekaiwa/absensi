@@ -1,86 +1,62 @@
 import NextAuth, { DefaultSession, User } from 'next-auth';
-import Credentials from 'next-auth/providers/credentials';
-import prisma from '../../../lib/prisma'; // Pastikan path ini benar
+import CredentialsProvider from 'next-auth/providers/credentials';
+import prisma from '../../../lib/prisma';
 import { AuthOptions } from 'next-auth';
 
-// Ekstensi tipe DefaultSession untuk menyertakan role dan id
+// Ekstensi tipe DefaultSession untuk menambahkan role dan id
 declare module 'next-auth' {
   interface Session {
     user: {
-      id: number; // Ganti tipe id menjadi number
-      role: string; // Tambahkan properti role di sini
-    } & DefaultSession['user']; // Gabungkan dengan user yang ada
+      id: number;
+      role: string;
+    } & DefaultSession['user'];
   }
 
   interface User {
-    id: number; // Pastikan id bertipe number
-    role: string; // Pastikan untuk menambahkan role ke tipe User
+    id: number;
+    role: string;
   }
-}
-
-// Ekstensi tipe pengguna untuk authorization
-interface ExtendedUser extends User {
-  role: string;
 }
 
 export const authOptions: AuthOptions = {
   providers: [
-    Credentials({
+    CredentialsProvider({
       name: 'Credentials',
       credentials: {
-        username: { label: "Username", type: "text" },
-        password: { label: "Password", type: "password" }
+        username: { label: 'Username', type: 'text' },
+        password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
         if (!credentials) {
-          throw new Error('No credentials provided');
+          throw new Error('Credentials are required');
         }
 
-        // Temukan pengguna berdasarkan username
         const user = await prisma.user.findUnique({
           where: { username: credentials.username },
         });
 
-        console.log("User found:", user); // Memeriksa user yang ditemukan
-        console.log("JWT Callback - User:", user);
-
-        if (!user) {
-          throw new Error('User not found');
+        // Validasi username dan password
+        if (!user || credentials.password !== user.password) {
+          throw new Error('Invalid username or password');
         }
 
-        // Cek password untuk siswa magang
+        // Jika role "INTERN", catat kehadiran
         if (user.role === 'INTERN') {
-          const dobString = user.dateOfBirth.toISOString().split('T')[0].replace(/-/g, '').slice(-6);
-          console.log("Expected password (DOB):", dobString); // Log expected password
-          if (credentials.password === dobString) {
-            await recordAttendance(user.id); // Panggil fungsi untuk mencatat kehadiran
-            return { id: user.id, username: user.username, role: user.role } as ExtendedUser; // Pastikan id bertipe number
-          } else {
-            console.log("Invalid password for INTERN"); // Log jika password tidak cocok
-            throw new Error('Invalid password');
-          }
+          await recordAttendance(user.id);
         }
 
-        // Cek password untuk admin
-        console.log("Admin password check:", credentials.password, user.password); // Log perbandingan password
-        if (credentials.password !== user.password) {
-          console.log("Invalid password for ADMIN"); // Log jika password tidak cocok
-          throw new Error('Invalid password');
-        }
-
-        return { id: user.id, username: user.username, role: user.role } as ExtendedUser; // Pastikan id bertipe number
-      }
-    })
+        return { id: user.id, username: user.username, role: user.role };
+      },
+    }),
   ],
   pages: {
-    signIn: '/login', // Atur halaman login sesuai kebutuhan
+    signIn: '/login',
   },
   session: {
-    strategy: 'jwt', // Menggunakan strategi JWT
+    strategy: 'jwt',
   },
   callbacks: {
     async jwt({ token, user }) {
-      console.log("JWT Callback - User:", user); // Log user yang diterima
       if (user) {
         token.id = user.id;
         token.role = user.role;
@@ -88,53 +64,46 @@ export const authOptions: AuthOptions = {
       return token;
     },
     async session({ session, token }) {
-      console.log("Session Callback - Token:", token); // Log token yang diterima
       if (token) {
         session.user.id = token.id as number;
         session.user.role = token.role as string;
       }
-      console.log("Session Data:", session); // Log data sesi
       return session;
-    }
-  }
+    },
+  },
 };
 
 // Fungsi untuk mencatat kehadiran
 async function recordAttendance(userId: number) {
   const today = new Date();
-  const dayOfWeek = today.getDay(); // 0 = Minggu, 1 = Senin, ..., 6 = Sabtu
-  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Mengecek apakah hari libur
+  today.setHours(0, 0, 0, 0);
+
+  const dayOfWeek = today.getDay();
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
   if (isWeekend) {
-    console.log("Today is a weekend. No attendance recorded.");
-    return; // Tidak mencatat kehadiran jika hari libur
+    console.log('No attendance recorded on weekends');
+    return;
   }
 
-  // Format tanggal ke YYYY-MM-DD dengan waktu 00:00:00
-  const date = new Date(today.getFullYear(), today.getMonth(), today.getDate()); // Membuat objek Date tanpa waktu (waktu otomatis 00:00:00)
-
-  // Cari attendance berdasarkan userId dan tanggal
-  const attendanceRecord = await prisma.attendance.findUnique({
-    where: {
-      userId_date: {
-        userId: userId,
-        date: date, // Pastikan mengirimkan objek Date dengan waktu 00:00:00
+  try {
+    await prisma.attendance.upsert({
+      where: {
+        userId_date: {
+          userId,
+          date: today,
+        },
       },
-    },
-  });
-
-  if (!attendanceRecord) {
-    // Pastikan hanya mencatat jika belum ada data yang tercatat untuk hari tersebut
-    await prisma.attendance.create({
-      data: {
-        userId: userId,
-        date: date, // Kirim objek Date dengan waktu 00:00:00
+      update: {},
+      create: {
+        userId,
+        date: today,
         status: 'PRESENT',
       },
     });
-    console.log(`Attendance recorded for user ID ${userId} on ${date.toISOString().split('T')[0]}.`);
-  } else {
-    console.log(`Attendance already recorded for user ID ${userId} on ${date.toISOString().split('T')[0]}.`);
+    console.log(`Attendance recorded for user ID ${userId}`);
+  } catch (error) {
+    console.error('Error recording attendance:', error);
   }
 }
 
