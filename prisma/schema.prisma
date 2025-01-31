@@ -1,0 +1,50 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql" // Ganti sesuai database yang Anda gunakan
+  url      = env("DATABASE_URL")
+}
+
+
+model User {
+  id          Int        @id @default(autoincrement())
+  username    String     @unique // Mengubah dari name menjadi username
+  password    String
+  role        UserRole
+  attendance  Attendance[]
+  dateOfBirth DateTime 
+  sekolah      String?  // Kolom baru
+  jurusan      String?  // Kolom baru
+  tanggalMasuk DateTime? // Kolom baru
+  tanggalKeluar DateTime? // Kolom baru
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Attendance {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  date      DateTime // Menghapus @unique dari kolom date
+  status    String   // Status kehadiran (PRESENT, ABSENT, dll.)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date]) // Menambahkan constraint unik untuk kombinasi userId dan date
+}
+
+
+
+
+enum UserRole {
+  ADMIN
+  INTERN
+}
